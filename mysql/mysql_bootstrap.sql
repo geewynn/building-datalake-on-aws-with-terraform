@@ -1,5 +1,8 @@
-CREATE DATABASE tickit;
+CREATE DATABASE IF NOT EXISTS tickit;
 USE tickit;
+
+-- GRANT ALL PRIVILEGES ON tickit.* TO 'mysqluser';
+-- GRANT FILE on *.* to 'mysqluser';
 
 CREATE TABLE IF NOT EXISTS tickit.listing
 (
@@ -42,24 +45,21 @@ CREATE TABLE IF NOT EXISTS tickit.sales
 COMMENT 'TICKIT sales transactions';
 
 
-LOAD DATA INFILE '/mysql/data/sales_pipe.txt' 
-INTO TABLE tickit.sales 
+LOAD DATA LOCAL INFILE 'mysql/data/sales_pipe.txt' INTO TABLE tickit.sales
 FIELDS TERMINATED BY '|'
 OPTIONALLY ENCLOSED BY '"'
 IGNORE 1 LINES
-(salesid,listid,sellerid,buyerid,eventid,dateid,qtysold,pricepaid,commission,saletime)
+(salesid,listid,sellerid,buyerid,eventid,dateid,qtysold,pricepaid,commission,saletime);
 
-LOAD DATA INFILE '/mysql/data/listings_pipe.txt' 
-INTO TABLE tickit.listing 
+LOAD DATA LOCAL INFILE 'mysql/data/listings_pipe.txt' INTO TABLE tickit.listing
 FIELDS TERMINATED BY '|'
 OPTIONALLY ENCLOSED BY '"'
 IGNORE 1 LINES
-(listid,sellerid,eventid,dateid,numtickets,priceperticket,totalprice,listtime)
+(listid,sellerid,eventid,dateid,numtickets,priceperticket,totalprice,listtime);
 
-LOAD DATA INFILE '/mysql/data/date2020_pipe.txt' 
-INTO TABLE tickit.date 
+LOAD DATA LOCAL INFILE 'mysql/data/date2020_pipe.txt' INTO TABLE tickit.date
 FIELDS TERMINATED BY '|'
 OPTIONALLY ENCLOSED BY '"'
 IGNORE 1 LINES
-(dateid,caldate,day,week,month,qtr,year,holiday)
+(dateid,caldate,day,week,month,qtr,year,holiday);
 

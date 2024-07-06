@@ -62,30 +62,39 @@ resource "aws_security_group" "rds" {
 
 resource "aws_db_instance" "datalake" {
   identifier             = "datalake"
-  db_name                = "tickit"
+  # db_name                = "tickit"
   instance_class         = "db.t3.micro"
   allocated_storage      = 5
   engine                 = "mysql"
   engine_version         = "8.0"
-  username               = "admin"
-  password               = "xxxxx"
+  username               = var.db_user
+  password               = var.db_password
   db_subnet_group_name   = aws_db_subnet_group.datalake.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = true
   skip_final_snapshot    = true
 }
 
-
 resource "null_resource" "database_setup" {
   depends_on = [aws_db_instance.datalake]
 
   provisioner "local-exec" {
-
-    command = <<EOT
-        cmd.exe /C "mysql -h ${aws_db_instance.datalake.endpoint} -u ${aws_db_instance.datalake.username} -p${aws_db_instance.datalake.password} ${aws_db_instance.datalake.db_name} < C:\\Users\\ekain\\Documents\\aws-datalake\\mysql\\mysql_bootstrap.sql"  
-        EOT
-    }
+    command = "mysql --local-infile=1 -h ${aws_db_instance.datalake.address} -u ${aws_db_instance.datalake.username} --password=${aws_db_instance.datalake.password} < mysql/mysql_bootstrap.sql"
+  }
 }
+
+
+
+# resource "null_resource" "database_setup" {
+#   depends_on = [aws_db_instance.datalake]
+
+#   provisioner "local-exec" {
+
+#     command = <<EOT
+#         "mysql -h ${aws_db_instance.datalake.endpoint} -u ${aws_db_instance.datalake.username} -p${aws_db_instance.datalake.password} ${aws_db_instance.datalake.db_name} < C:\\Users\\ekain\\Documents\\aws-datalake\\mysql\\mysql_bootstrap.sql"  
+#         EOT
+#     }
+# }
 
 
 # resource "aws_glue_catalog_database" "aws_dl_db" {
