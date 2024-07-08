@@ -11,22 +11,34 @@ module "vpc" {
   enable_dns_support   = true
 }
 
-# resource "aws_iam_role" "gluerole" {
-#   name = "gluerole"
+resource "aws_iam_role" "glueroles" {
+  name = "admin-role"
 
-#   # Terraform's "jsonencode" function converts a
-#   # Terraform expression result to valid JSON syntax.
-#   assume_role_policy = jsonencode({
-#     Version = "2012-10-17"
-#     "Statement": [
-#         {
-#             "Effect": "Allow",
-#             "Action": "*",
-#             "Resource": "*"
-#         }
-#     ]
-#   })
-# }
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "glue.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      },
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "rds.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "admin_policy_attachment" {
+  role       = aws_iam_role.glueroles.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
 
 resource "aws_db_subnet_group" "datalake" {
   name       = "datalake-sg"
@@ -42,17 +54,18 @@ resource "aws_security_group" "rds" {
   vpc_id = module.vpc.vpc_id
 
   ingress {
-    from_port   = 3306
-    to_port     = 3306
+    from_port   = 0
+    to_port     = 65535
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    # ipv6_cidr_blocks = ["::/0"]
   }
 
   tags = {
@@ -60,9 +73,16 @@ resource "aws_security_group" "rds" {
   }
 }
 
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id = module.vpc.vpc_id
+  service_name = "com.amazonaws.us-east-1.s3"
+  vpc_endpoint_type = "Gateway"
+  # security_group_ids = [aws_security_group.rds.id]
+  route_table_ids = module.vpc.public_route_table_ids
+  
+}
 resource "aws_db_instance" "datalake" {
   identifier             = "datalake"
-  # db_name                = "tickit"
   instance_class         = "db.t3.micro"
   allocated_storage      = 5
   engine                 = "mysql"
@@ -84,48 +104,38 @@ resource "null_resource" "database_setup" {
 }
 
 
-
-# resource "null_resource" "database_setup" {
-#   depends_on = [aws_db_instance.datalake]
-
-#   provisioner "local-exec" {
-
-#     command = <<EOT
-#         "mysql -h ${aws_db_instance.datalake.endpoint} -u ${aws_db_instance.datalake.username} -p${aws_db_instance.datalake.password} ${aws_db_instance.datalake.db_name} < C:\\Users\\ekain\\Documents\\aws-datalake\\mysql\\mysql_bootstrap.sql"  
-#         EOT
-#     }
-# }
+resource "aws_glue_catalog_database" "aws_dl_db" {
+  depends_on = [ aws_db_instance.datalake ]
+  name = "tickit_glue_db"
+}
 
 
-# resource "aws_glue_catalog_database" "aws_dl_db" {
-#   name = "tickit_glue_db"
-# }
+resource "aws_glue_connection" "tickit_glue_connection" {
+  connection_properties = {
+    JDBC_CONNECTION_URL = "jdbc:mysql://${aws_db_instance.datalake.endpoint}/tickit"
+    PASSWORD            = var.db_password
+    USERNAME            = var.db_user
+  }
+
+  name = "tickit_glue_connection"
+
+  physical_connection_requirements {
+    availability_zone      = data.aws_availability_zones.available.names[0] #data.aws_availability_zones.available
+    security_group_id_list = [aws_security_group.rds.id] #[aws_security_group.example.id]
+    subnet_id              = module.vpc.public_subnets[0] # aws_subnet.example.id
+  }
+}
 
 
-# resource "aws_glue_connection" "tickit_glue_connection" {
-#   connection_properties = {
-#     JDBC_CONNECTION_URL = "jdbc:mysql://${aws_db_instance.datalake.endpoint}/${aws_db_instance.datalake.identifier}"
-#     PASSWORD            = "admin"
-#     USERNAME            = "12345678"
-#   }
+resource "aws_glue_crawler" "tickit_glue_crawler" {
+  database_name = aws_glue_catalog_database.aws_dl_db.name
+  name          = "tickit_mysql_crawlers"
+  role          = aws_iam_role.glueroles.arn
 
-#   name = "tickit_glue_connection"
+  depends_on = [ aws_glue_connection.tickit_glue_connection ]
 
-#   physical_connection_requirements {
-#     availability_zone      = aws_availability_zones.available
-#     security_group_id_list = [aws_security_group.rds.id] #[aws_security_group.example.id]
-#     subnet_id              = module.vpc.public_subnets.id # aws_subnet.example.id
-#   }
-# }
-
-
-# resource "aws_glue_crawler" "tickit_glue_crawler" {
-#   database_name = aws_glue_catalog_database.aws_dl_db.name
-#   name          = "tickit_mysql_crawler"
-#   role          = aws_iam_role.gluerole.arn
-
-#   jdbc_target {
-#     connection_name = aws_glue_connection.tickit_glue_connection.name
-#     path            = "tickit/%"
-#   }
-# }
+  jdbc_target {
+    connection_name = aws_glue_connection.tickit_glue_connection.name
+    path            = "tickit/%"
+  }
+}
