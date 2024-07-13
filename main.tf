@@ -30,6 +30,13 @@ resource "aws_iam_role" "glueroles" {
           Service = "rds.amazonaws.com"
         },
         Action = "sts:AssumeRole"
+      },
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "s3.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
       }
     ]
   })
@@ -137,5 +144,60 @@ resource "aws_glue_crawler" "tickit_glue_crawler" {
   jdbc_target {
     connection_name = aws_glue_connection.tickit_glue_connection.name
     path            = "tickit/%"
+  }
+}
+
+resource "null_resource" "aws_glue_crawler_run" {
+  depends_on = [aws_glue_crawler.tickit_glue_crawler]
+
+  provisioner "local-exec" {
+    command = "aws glue start-crawler --name ${aws_glue_crawler.tickit_glue_crawler.name}"
+  }
+}
+
+
+resource "aws_glue_job" "job1" {
+  name        = "tickit_listing_raw_job"
+  role_arn    = aws_iam_role.glueroles.arn
+  worker_type = "Standard"
+  number_of_workers = 1
+  command {
+    name            = "tickit_listing_raw"
+    script_location = ""
+    python_version  = "3.9"
+  }
+  default_arguments = {
+    "--TempDir" = ""
+  }
+}
+
+resource "aws_glue_job" "job2" {
+  name        = "tickit_listing_refined_job"
+  role_arn    = aws_iam_role.glueroles.arn
+  worker_type = "Standard"
+  number_of_workers = 1
+  command {
+    name            = "tickit_listing_refined"
+    script_location = ""
+    python_version  = "3.9"
+  }
+  default_arguments = {
+    "--TempDir" = ""
+  }
+}
+
+
+resource "aws_glue_trigger" "trigger_job2" {
+  name     = "trigger-job2"
+  type     = "CONDITIONAL"
+  actions {
+    job_name = aws_glue_job.job2.name
+  }
+  predicate {
+    conditions {
+      job_name    = aws_glue_job.job1.name
+      state       = "SUCCEEDED"
+      logical_operator = "EQUALS"
+    }
   }
 }
